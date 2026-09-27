@@ -116,6 +116,3 @@ Example request body for `POST /api/documents`:
 - Docker
 - GitHub Actions CI/CD
 - AWS deployment
-
-See the "Future Roadmap" section shared alongside this README for the
-phase-by-phase plan.
