@@ -61,6 +61,20 @@
             <version>3.0.7</version>
         </dependency>
 
+        <!-- Hibernate's vector module: maps a Java float[] entity field to
+     a PostgreSQL pgvector `vector(N)` column (via @JdbcTypeCode
+     (SqlTypes.VECTOR) + @Array(length = N) in DocumentChunk).
+     Version is pinned to 6.5.3.Final to match EXACTLY the
+     hibernate-core version spring-boot-starter-parent:3.3.4
+     already manages transitively — leaving the version off (and
+     letting the two resolve independently) risks two different
+     Hibernate ORM versions landing on the classpath at once. -->
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-vector</artifactId>
+            <version>6.5.3.Final</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
