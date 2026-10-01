@@ -6,6 +6,7 @@ import com.kopal.smartknowledgebase.dto.PdfExtractionResponse;
 import com.kopal.smartknowledgebase.entity.Document;
 import com.kopal.smartknowledgebase.entity.DocumentChunk;
 import com.kopal.smartknowledgebase.exception.DocumentNotFoundException;
+import com.kopal.smartknowledgebase.exception.EmbeddingGenerationException;
 import com.kopal.smartknowledgebase.exception.InvalidFileException;
 import com.kopal.smartknowledgebase.repository.DocumentChunkRepository;
 import com.kopal.smartknowledgebase.repository.DocumentRepository;
@@ -24,6 +25,8 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -44,7 +47,7 @@ import static org.mockito.Mockito.when;
  * one not-found case), plus focused tests for extractTextFromPdf(...)
  * — expand this yourself as you build more features.
  *
- * DocumentService now depends on FOUR collaborators. This is the direct
+ * DocumentService now depends on FIVE collaborators. This is the direct
  * payoff of constructor injection: when a class's dependency list
  * changes, the test just adds more @Mock fields and constructor
  * arguments — no Spring context, no wiring changes anywhere else.
@@ -64,12 +67,16 @@ class DocumentServiceTest {
     @Mock
     private DocumentChunkRepository documentChunkRepository;
 
+    @Mock
+    private EmbeddingService embeddingService;
+
     private DocumentService documentService;
 
     @BeforeEach
     void setUp() {
         documentService = new DocumentService(
-                documentRepository, pdfTextExtractionService, textChunkingService, documentChunkRepository);
+                documentRepository, pdfTextExtractionService, textChunkingService,
+                documentChunkRepository, embeddingService);
     }
 
     @Test
@@ -127,6 +134,9 @@ class DocumentServiceTest {
         when(textChunkingService.chunkText("extracted text from the PDF"))
                 .thenReturn(List.of("chunk zero", "chunk one", "chunk two"));
 
+        when(embeddingService.generateEmbedding(anyString()))
+                .thenReturn(new float[DocumentChunk.EMBEDDING_DIMENSIONS]);
+
         PdfExtractionResponse response = documentService.extractTextFromPdf(file);
 
         assertThat(response.getDocumentId()).isEqualTo(42L);
@@ -151,6 +161,9 @@ class DocumentServiceTest {
         when(textChunkingService.chunkText("some extracted text"))
                 .thenReturn(List.of("first chunk", "second chunk"));
 
+        when(embeddingService.generateEmbedding(anyString()))
+                .thenReturn(new float[DocumentChunk.EMBEDDING_DIMENSIONS]);
+
         documentService.extractTextFromPdf(file);
 
         // Capture exactly what DocumentService handed to the repository,
@@ -170,6 +183,78 @@ class DocumentServiceTest {
         assertThat(savedChunks.get(1).getChunkIndex()).isEqualTo(1);
         assertThat(savedChunks.get(1).getChunkText()).isEqualTo("second chunk");
         assertThat(savedChunks.get(1).getDocument()).isSameAs(savedDocument);
+    }
+
+    @Test
+    void extractTextFromPdf_shouldGenerateAndAssignA768DimensionEmbeddingToEachChunk() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "sample.pdf", "application/pdf", "irrelevant bytes".getBytes()
+        );
+
+        when(pdfTextExtractionService.extractText(any(byte[].class)))
+                .thenReturn("some extracted text");
+
+        Document savedDocument = new Document();
+        savedDocument.setId(9L);
+        when(documentRepository.save(any(Document.class))).thenReturn(savedDocument);
+
+        when(textChunkingService.chunkText("some extracted text"))
+                .thenReturn(List.of("first chunk", "second chunk"));
+
+        // Two DIFFERENT dummy embeddings, so we can confirm each chunk
+        // gets the embedding that actually corresponds to ITS text, not
+        // just any embedding reused across all chunks.
+        float[] embeddingForFirstChunk = new float[DocumentChunk.EMBEDDING_DIMENSIONS];
+        embeddingForFirstChunk[0] = 0.111f;
+        float[] embeddingForSecondChunk = new float[DocumentChunk.EMBEDDING_DIMENSIONS];
+        embeddingForSecondChunk[0] = 0.222f;
+
+        when(embeddingService.generateEmbedding("first chunk")).thenReturn(embeddingForFirstChunk);
+        when(embeddingService.generateEmbedding("second chunk")).thenReturn(embeddingForSecondChunk);
+
+        documentService.extractTextFromPdf(file);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<DocumentChunk>> chunksCaptor = ArgumentCaptor.forClass(List.class);
+        verify(documentChunkRepository).saveAll(chunksCaptor.capture());
+        List<DocumentChunk> savedChunks = chunksCaptor.getValue();
+
+        assertThat(savedChunks).hasSize(2);
+
+        assertThat(savedChunks.get(0).getEmbedding()).hasSize(DocumentChunk.EMBEDDING_DIMENSIONS);
+        assertThat(savedChunks.get(0).getEmbedding()[0]).isEqualTo(0.111f);
+
+        assertThat(savedChunks.get(1).getEmbedding()).hasSize(DocumentChunk.EMBEDDING_DIMENSIONS);
+        assertThat(savedChunks.get(1).getEmbedding()[0]).isEqualTo(0.222f);
+    }
+
+    @Test
+    void extractTextFromPdf_shouldPropagateEmbeddingGenerationFailureAndNeverSaveAnyChunks() {
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "sample.pdf", "application/pdf", "irrelevant bytes".getBytes()
+        );
+
+        when(pdfTextExtractionService.extractText(any(byte[].class)))
+                .thenReturn("some extracted text");
+
+        Document savedDocument = new Document();
+        savedDocument.setId(11L);
+        when(documentRepository.save(any(Document.class))).thenReturn(savedDocument);
+
+        when(textChunkingService.chunkText("some extracted text"))
+                .thenReturn(List.of("first chunk", "second chunk"));
+
+        when(embeddingService.generateEmbedding(anyString()))
+                .thenThrow(new EmbeddingGenerationException("Failed to reach the embedding provider"));
+
+        assertThatThrownBy(() -> documentService.extractTextFromPdf(file))
+                .isInstanceOf(EmbeddingGenerationException.class);
+
+        // Confirms DocumentService doesn't catch-and-continue: if even
+        // one chunk's embedding fails, saveAll is never reached at all —
+        // consistent with letting @Transactional roll back everything,
+        // including the Document row already saved above.
+        verify(documentChunkRepository, never()).saveAll(any());
     }
 
     @Test

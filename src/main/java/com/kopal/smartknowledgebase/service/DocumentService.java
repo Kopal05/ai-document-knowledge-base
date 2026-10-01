@@ -45,7 +45,7 @@ import java.util.List;
  * because it makes dependencies explicit, allows the field to be final
  * (immutable after construction), and makes the class trivially testable
  * by just calling `new DocumentService(mockRepo, mockPdfService,
- * mockChunkingService, mockChunkRepo)`.
+ * mockChunkingService, mockChunkRepo, mockEmbeddingService)`.
  */
 @Service
 public class DocumentService {
@@ -54,22 +54,25 @@ public class DocumentService {
     private final PdfTextExtractionService pdfTextExtractionService;
     private final TextChunkingService textChunkingService;
     private final DocumentChunkRepository documentChunkRepository;
+    private final EmbeddingService embeddingService;
 
     // Constructor injection: Spring sees there is exactly one constructor,
-    // so it automatically injects all four beans here — no @Autowired
+    // so it automatically injects all five beans here — no @Autowired
     // annotation is required on a single constructor. This is also
     // exactly why constructor injection makes this class so easy to unit
     // test: in DocumentServiceTest we just pass `new DocumentService(
-    // mockRepo, mockPdfService, mockChunkingService, mockChunkRepo)`, no
-    // Spring container needed.
+    // mockRepo, mockPdfService, mockChunkingService, mockChunkRepo,
+    // mockEmbeddingService)`, no Spring container needed.
     public DocumentService(DocumentRepository documentRepository,
                            PdfTextExtractionService pdfTextExtractionService,
                            TextChunkingService textChunkingService,
-                           DocumentChunkRepository documentChunkRepository) {
+                           DocumentChunkRepository documentChunkRepository,
+                           EmbeddingService embeddingService) {
         this.documentRepository = documentRepository;
         this.pdfTextExtractionService = pdfTextExtractionService;
         this.textChunkingService = textChunkingService;
         this.documentChunkRepository = documentChunkRepository;
+        this.embeddingService = embeddingService;
     }
 
     public DocumentResponse createDocument(CreateDocumentRequest request) {
@@ -167,10 +170,24 @@ public class DocumentService {
         // DocumentChunkRepository for how that order gets read back).
         List<DocumentChunk> chunkEntities = new ArrayList<>();
         for (int index = 0; index < textChunks.size(); index++) {
+            String chunkText = textChunks.get(index);
+
             DocumentChunk chunk = new DocumentChunk();
             chunk.setDocument(savedDocument);
             chunk.setChunkIndex(index);
-            chunk.setChunkText(textChunks.get(index));
+            chunk.setChunkText(chunkText);
+
+            // NEW IN THIS PHASE: reuse the existing, already-tested
+            // EmbeddingService exactly as-is — DocumentService doesn't
+            // know or care whether it's Ollama, HTTP, or anything else
+            // underneath. If this throws EmbeddingGenerationException
+            // (provider unreachable, bad response, etc.), it propagates
+            // straight out of this @Transactional method, rolling back
+            // the Document row and every chunk built so far in this same
+            // upload — no half-embedded document is ever left committed.
+            float[] embedding = embeddingService.generateEmbedding(chunkText);
+            chunk.setEmbedding(embedding);
+
             chunkEntities.add(chunk);
         }
         documentChunkRepository.saveAll(chunkEntities);
