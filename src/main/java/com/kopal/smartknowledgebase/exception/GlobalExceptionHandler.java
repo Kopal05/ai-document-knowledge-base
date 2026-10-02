@@ -3,6 +3,7 @@ package com.kopal.smartknowledgebase.exception;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.support.MissingServletRequestPartException;
@@ -118,14 +119,62 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
-    // 6. Anything else we didn't anticipate -> 500
+    // 6. Blank/missing search query -> 400
+    @ExceptionHandler(InvalidSearchQueryException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidSearchQuery(InvalidSearchQueryException ex) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                ex.getMessage()
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    // 7. Embedding provider unreachable/failed -> 503
+    // WHY THIS IS NEW (and overdue): EmbeddingGenerationException has
+    // existed since Phase 3.1, but nothing ever handled it specifically
+    // — it was silently falling into the generic 500 handler below.
+    // That went unnoticed because the PDF upload flow (Phase 3.3) rarely
+    // hits a failing Ollama call in practice. Semantic search makes this
+    // a directly, easily client-triggerable failure (just stop Ollama
+    // and search), so it needs a real answer now. 503 Service
+    // Unavailable (not 500, not 400) is the honest status: the server
+    // itself isn't broken and the client didn't do anything wrong — a
+    // dependency THIS SERVER relies on (Ollama) is temporarily
+    // unreachable.
+    @ExceptionHandler(EmbeddingGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleEmbeddingGenerationFailure(EmbeddingGenerationException ex) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(),
+                "The embedding service is currently unavailable. Please try again shortly."
+        );
+        return new ResponseEntity<>(error, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    // 8. Required query parameter missing entirely (e.g. no ?query=...) -> 400
+    // Same shadowing issue as MissingServletRequestPartException above:
+    // Spring would return 400 for this automatically on its own, but our
+    // own catch-all Exception handler below intercepts it first unless
+    // we handle it explicitly here.
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestParameter(MissingServletRequestParameterException ex) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.BAD_REQUEST.value(),
+                HttpStatus.BAD_REQUEST.getReasonPhrase(),
+                "Required parameter '" + ex.getParameterName() + "' is missing"
+        );
+        return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    // 9. Anything else we didn't anticipate -> 500
     // Keeping this last/generic ensures unexpected bugs still return clean
     // JSON instead of leaking a stack trace to the client.
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneric(Exception ex) {
-
-        ex.printStackTrace();
-
         ErrorResponse error = new ErrorResponse(
                 LocalDateTime.now(),
                 HttpStatus.INTERNAL_SERVER_ERROR.value(),

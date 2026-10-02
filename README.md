@@ -1,118 +1,181 @@
-# Smart Document Q&A / Knowledge Base API
+# AI-Powered Document Knowledge Base & Q&A System
 
-## 1. What this project is
+A backend project where users upload PDF documents and search their
+content using meaning rather than exact keyword matches. The current
+milestone supports PDF text extraction, chunking, embeddings, pgvector
+storage, and semantic search. RAG answer generation, a frontend, and
+deployment are planned next.
 
-A backend API that will eventually let users upload PDF documents and ask
-natural-language questions about their content, using RAG (Retrieval
-Augmented Generation) with vector embeddings and an LLM.
+## Project Checklist
 
-This repository currently contains **Phase 1 only**: a clean, layered
-Spring Boot skeleton with basic CRUD for a `Document` resource, backed by
-PostgreSQL. Everything else (PDF processing, embeddings, auth, caching,
-deployment, etc.) is intentionally **not implemented yet** — it's being
-built incrementally as a learning exercise.
+### Foundation
 
-## 2. Current features (Phase 1)
+-   [x] Create a Java 21 / Spring Boot 3.3.4 Maven application.
+-   [x] Organize code into Controller, Service, Repository, Entity, DTO,
+    and exception layers.
+-   [x] Connect PostgreSQL 17 using Spring Data JPA and Hibernate.
+-   [x] Implement document CRUD functionality.
+-   [x] Add request validation and centralized exception handling.
+-   [x] Verify the API and database connection.
 
-- Create / list / fetch / delete a `Document` record (metadata only — no
-  actual file upload yet)
-- Layered architecture: Controller → Service → Repository → PostgreSQL
-- Request validation with Bean Validation
-- Centralized error handling with `@RestControllerAdvice`
-- One example unit test for the service layer
+### PDF Processing
 
-## 3. Tech stack
+-   [x] Add Apache PDFBox for PDF text extraction.
+-   [x] Implement `POST /api/documents/upload`.
+-   [x] Validate uploaded files and handle extraction errors.
+-   [x] Return document ID, filename, extracted text, and chunk count.
+-   [x] Split extracted text into overlapping chunks.
+-   [x] Add unit tests for text chunking.
+-   [x] Save documents and their chunks in PostgreSQL.
+-   [x] Verify stored chunks in the database.
+-   [x] Configure the upload-size limit.
 
-- Java 21
-- Spring Boot 3.3 (Spring Web, Spring Data JPA)
-- Hibernate
-- PostgreSQL
-- Maven
-- Lombok
-- JUnit 5 + Mockito + AssertJ (testing)
+### Embeddings and Semantic Search
 
-## 4. Project structure
+-   [x] Install Ollama and download `nomic-embed-text`.
+-   [x] Verify that the model creates 768-dimensional embeddings.
+-   [x] Implement an embedding provider client and embedding service.
+-   [x] Add embedding error handling and mocked tests.
+-   [x] Install pgvector and enable the `vector` extension in the
+    project database.
+-   [x] Map the embedding column as `vector(768)` using Hibernate.
+-   [x] Generate and store embeddings for document chunks.
+-   [x] Convert a search question into an embedding.
+-   [x] Compare embeddings with pgvector to find semantically similar
+    chunks.
+-   [x] Return ranked matching chunks with similarity scores.
+-   [x] Implement `GET /api/documents/{documentId}/search?query=...`.
+-   [x] Test semantic search in Postman with resume-related questions.
 
-```
-com.kopal.smartknowledgebase
-├── controller       # HTTP endpoints, thin, no business logic
-├── service           # Business logic, entity <-> DTO mapping
-├── repository        # Spring Data JPA interfaces
-├── entity             # JPA-mapped database entities
-├── dto                # Request/response shapes exposed by the API
-├── exception          # Custom exceptions + global exception handler
-├── config             # (empty for now) future @Configuration classes
-└── SmartKnowledgeBaseApplication.java
-```
+### Planned
 
-## 5. How to run locally
+-   [ ] Add RAG so an LLM can generate natural-language answers using
+    retrieved chunks.
+-   [ ] Add source references to answers.
+-   [ ] Add authentication and authorization.
+-   [ ] Build a simple, polished, responsive frontend.
+-   [ ] Deploy the frontend, backend, and database.
+-   [ ] Add production improvements, CI/CD, and final documentation.
 
-### Prerequisites
-- Java 21 (JDK)
-- Maven (or use the included wrapper if you add one)
-- A running local PostgreSQL instance
+## Main Components
+
+  -----------------------------------------------------------------------
+  Component                           What it does
+  ----------------------------------- -----------------------------------
+  Java                                Programming language used for the
+                                      backend.
+
+  Spring Boot                         Helps build the REST API and
+                                      application.
+
+  Controller                          Receives HTTP requests and returns
+                                      responses.
+
+  Service                             Contains logic such as PDF
+                                      processing and searching.
+
+  Repository                          Reads and writes data through
+                                      Spring Data JPA.
+
+  JPA / Hibernate                     Maps Java objects to database
+                                      records.
+
+  PostgreSQL                          Stores document details and text
+                                      chunks.
+
+  pgvector                            Adds vector storage and similarity
+                                      search to PostgreSQL.
+
+  Apache PDFBox                       Extracts text from PDF files.
+
+  Ollama `nomic-embed-text`           Runs locally to create
+                                      768-dimensional text embeddings.
+
+  Embedding                           A numerical representation of text
+                                      meaning.
+
+  Semantic search                     Finds related content even when
+                                      exact words differ.
+
+  RAG (planned)                       Gives retrieved passages to an LLM
+                                      to help generate an answer.
+  -----------------------------------------------------------------------
+
+## Technology Stack
+
+-   **Language:** Java 21
+-   **Backend:** Spring Boot 3.3.4
+-   **Build:** Maven
+-   **Database:** PostgreSQL 17
+-   **Persistence:** Spring Data JPA, Hibernate
+-   **Vector search:** pgvector
+-   **PDF processing:** Apache PDFBox
+-   **Embeddings:** Ollama, `nomic-embed-text` (768 dimensions)
+-   **Testing:** JUnit 5, Mockito, AssertJ
+-   **API testing:** Postman
+-   **Version control:** Git, GitHub
+
+## Run Locally
+
+### Requirements
+
+-   Java 21 and Maven
+-   PostgreSQL 17 with pgvector installed
+-   Ollama with `nomic-embed-text`
+-   Git
 
 ### Steps
-1. Clone/open the project in IntelliJ.
-2. Set up the database (see section 6 below).
-3. Either export environment variables, or just rely on the defaults in
-   `application.properties` (username `postgres`, password `postgres`,
-   database `smart_knowledge_base`, host `localhost:5432`):
-   ```
-   export DB_URL=jdbc:postgresql://localhost:5432/smart_knowledge_base
-   export DB_USERNAME=postgres
-   export DB_PASSWORD=your_password
-   ```
-4. Run the application:
-   ```
-   mvn spring-boot:run
-   ```
-   or run `SmartKnowledgeBaseApplication` directly from IntelliJ.
-5. The API will be available at `http://localhost:8080`.
 
-## 6. PostgreSQL setup
+1.  Clone the repository:
 
-1. Install PostgreSQL locally (or run it in a container — Docker comes
-   later in the roadmap, so for now a local install is simplest).
-2. Create the database:
-   ```sql
-   CREATE DATABASE smart_knowledge_base;
-   ```
-3. Make sure a user/role exists with access to it (the default `postgres`
-   superuser works fine for local development).
-4. That's it — with `spring.jpa.hibernate.ddl-auto=update`, Hibernate will
-   create the `documents` table automatically the first time you run the
-   app.
+    ``` bash
+    git clone https://github.com/Kopal05/ai-document-knowledge-base.git
+    cd ai-document-knowledge-base
+    ```
 
-## 7. Current API endpoints
+2.  Create the database if needed:
 
-| Method | Path                  | Description              |
-|--------|-----------------------|---------------------------|
-| POST   | `/api/documents`      | Create a document         |
-| GET    | `/api/documents`      | List all documents        |
-| GET    | `/api/documents/{id}` | Get a document by id      |
-| DELETE | `/api/documents/{id}` | Delete a document by id   |
+    ``` sql
+    CREATE DATABASE smart_knowledge_base;
+    ```
 
-Example request body for `POST /api/documents`:
-```json
-{
-  "title": "My Document",
-  "fileName": "document.pdf"
-}
-```
+3.  Connect to `smart_knowledge_base` and enable pgvector:
 
-## 8. Future planned features (NOT IMPLEMENTED YET)
+    ``` sql
+    CREATE EXTENSION IF NOT EXISTS vector;
+    ```
 
-- PDF upload + text extraction
-- Document chunking
-- Embedding generation
-- pgvector storage + semantic similarity search
-- RAG pipeline + LLM-generated answers
-- JWT authentication & authorization
-- Redis caching
-- Rate limiting
-- Swagger/OpenAPI docs
-- Full unit + integration test suite (Testcontainers)
-- Docker
-- GitHub Actions CI/CD
-- AWS deployment
+4.  Make sure Ollama is running and the model is installed:
+
+    ``` bash
+    ollama pull nomic-embed-text
+    ollama list
+    ```
+
+5.  Configure database credentials and other settings in
+    `application.properties` or environment variables. Do not commit
+    passwords or secrets. Refer to the repository's current
+    configuration for the exact property names.
+
+6.  Run tests:
+
+    ``` bash
+    mvn test
+    ```
+
+7.  Start the backend:
+
+    ``` bash
+    mvn spring-boot:run
+    ```
+
+The current local API uses `http://localhost:8080`.
+
+## Current Status
+
+**Completed:** Spring Boot and PostgreSQL foundation, PDF processing,
+chunk persistence, Ollama embeddings, pgvector integration, and semantic
+search tested locally.
+
+**Next phase:** RAG-based answer generation. A simple frontend and
+deployment are planned after the core backend flow is complete.

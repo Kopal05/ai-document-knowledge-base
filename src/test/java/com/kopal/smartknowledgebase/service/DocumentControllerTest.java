@@ -1,7 +1,10 @@
 package com.kopal.smartknowledgebase.controller;
 
 import com.kopal.smartknowledgebase.dto.PdfExtractionResponse;
+import com.kopal.smartknowledgebase.dto.SearchResponse;
+import com.kopal.smartknowledgebase.dto.SearchResult;
 import com.kopal.smartknowledgebase.service.DocumentService;
+import com.kopal.smartknowledgebase.service.SemanticSearchService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -9,8 +12,12 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -48,6 +55,9 @@ class DocumentControllerTest {
     @MockBean
     private DocumentService documentService;
 
+    @MockBean
+    private SemanticSearchService semanticSearchService;
+
     @Test
     void uploadAndExtractText_shouldReturnExtractedTextForAValidUpload() throws Exception {
         MockMultipartFile file = new MockMultipartFile(
@@ -72,5 +82,42 @@ class DocumentControllerTest {
         // because the "file" @RequestParam is required by default.
         mockMvc.perform(multipart("/api/documents/upload"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void searchDocument_shouldReturnSearchResultsForAValidQuery() throws Exception {
+        SearchResult result = new SearchResult(17L, 1L, 3, "JWT chunk text", 0.91);
+        when(semanticSearchService.search(eq(1L), eq("How does JWT work?"), any()))
+                .thenReturn(new SearchResponse("How does JWT work?", List.of(result)));
+
+        mockMvc.perform(get("/api/documents/1/search").param("query", "How does JWT work?"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.query").value("How does JWT work?"))
+                .andExpect(jsonPath("$.results[0].chunkId").value(17))
+                .andExpect(jsonPath("$.results[0].documentId").value(1))
+                .andExpect(jsonPath("$.results[0].chunkIndex").value(3))
+                .andExpect(jsonPath("$.results[0].chunkText").value("JWT chunk text"))
+                .andExpect(jsonPath("$.results[0].similarity").value(0.91));
+    }
+
+    @Test
+    void searchDocument_shouldReturn400WhenQueryParameterIsMissing() throws Exception {
+        // No ?query=... at all — Spring itself rejects this before the
+        // controller method runs, same pattern as the missing-file test
+        // above, just for a regular request parameter instead of a
+        // multipart part.
+        mockMvc.perform(get("/api/documents/1/search"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void searchDocument_shouldPassTopKThroughWhenProvided() throws Exception {
+        when(semanticSearchService.search(eq(1L), eq("some query"), eq(3)))
+                .thenReturn(new SearchResponse("some query", List.of()));
+
+        mockMvc.perform(get("/api/documents/1/search")
+                        .param("query", "some query")
+                        .param("topK", "3"))
+                .andExpect(status().isOk());
     }
 }

@@ -3,7 +3,9 @@ package com.kopal.smartknowledgebase.controller;
 import com.kopal.smartknowledgebase.dto.CreateDocumentRequest;
 import com.kopal.smartknowledgebase.dto.DocumentResponse;
 import com.kopal.smartknowledgebase.dto.PdfExtractionResponse;
+import com.kopal.smartknowledgebase.dto.SearchResponse;
 import com.kopal.smartknowledgebase.service.DocumentService;
+import com.kopal.smartknowledgebase.service.SemanticSearchService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -39,9 +41,12 @@ import java.util.List;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final SemanticSearchService semanticSearchService;
 
-    public DocumentController(DocumentService documentService) {
+    public DocumentController(DocumentService documentService,
+                              SemanticSearchService semanticSearchService) {
         this.documentService = documentService;
+        this.semanticSearchService = semanticSearchService;
     }
 
     // POST /api/documents
@@ -92,6 +97,21 @@ public class DocumentController {
     @PostMapping("/upload")
     public ResponseEntity<PdfExtractionResponse> uploadAndExtractText(@RequestParam("file") MultipartFile file) {
         PdfExtractionResponse response = documentService.extractTextFromPdf(file);
+        return ResponseEntity.ok(response);
+    }
+
+    // GET /api/documents/{documentId}/search?query=...&topK=5
+    // GET, not POST: this doesn't change server state, the query is a
+    // short string that fits comfortably in a query parameter, and it
+    // mirrors the existing /api/documents/{id}/... route shape. topK has
+    // no default here — null is passed straight through, and
+    // SemanticSearchService decides what "no topK given" means (see its
+    // javadoc), keeping that decision in the service, not the controller.
+    @GetMapping("/{documentId}/search")
+    public ResponseEntity<SearchResponse> searchDocument(@PathVariable Long documentId,
+                                                         @RequestParam String query,
+                                                         @RequestParam(required = false) Integer topK) {
+        SearchResponse response = semanticSearchService.search(documentId, query, topK);
         return ResponseEntity.ok(response);
     }
 }
