@@ -170,7 +170,23 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
-    // 9. Anything else we didn't anticipate -> 500
+    // 9. Chat/LLM provider unreachable/failed -> 503
+    // Mirrors EmbeddingGenerationException's handler exactly, and for
+    // the identical reason: a dependency THIS SERVER relies on (Ollama's
+    // chat model) is temporarily unreachable — not a client mistake
+    // (400) and not a bug in our own code (500).
+    @ExceptionHandler(AnswerGenerationException.class)
+    public ResponseEntity<ErrorResponse> handleAnswerGenerationFailure(AnswerGenerationException ex) {
+        ErrorResponse error = new ErrorResponse(
+                LocalDateTime.now(),
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                HttpStatus.SERVICE_UNAVAILABLE.getReasonPhrase(),
+                "The answer generation service is currently unavailable. Please try again shortly."
+        );
+        return new ResponseEntity<>(error, HttpStatus.SERVICE_UNAVAILABLE);
+    }
+
+    // 10. Anything else we didn't anticipate -> 500
     // Keeping this last/generic ensures unexpected bugs still return clean
     // JSON instead of leaking a stack trace to the client.
     @ExceptionHandler(Exception.class)

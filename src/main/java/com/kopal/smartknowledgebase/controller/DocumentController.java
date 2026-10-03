@@ -1,10 +1,13 @@
 package com.kopal.smartknowledgebase.controller;
 
+import com.kopal.smartknowledgebase.dto.AskRequest;
+import com.kopal.smartknowledgebase.dto.AskResponse;
 import com.kopal.smartknowledgebase.dto.CreateDocumentRequest;
 import com.kopal.smartknowledgebase.dto.DocumentResponse;
 import com.kopal.smartknowledgebase.dto.PdfExtractionResponse;
 import com.kopal.smartknowledgebase.dto.SearchResponse;
 import com.kopal.smartknowledgebase.service.DocumentService;
+import com.kopal.smartknowledgebase.service.QuestionAnsweringService;
 import com.kopal.smartknowledgebase.service.SemanticSearchService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -42,11 +45,14 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final SemanticSearchService semanticSearchService;
+    private final QuestionAnsweringService questionAnsweringService;
 
     public DocumentController(DocumentService documentService,
-                              SemanticSearchService semanticSearchService) {
+                              SemanticSearchService semanticSearchService,
+                              QuestionAnsweringService questionAnsweringService) {
         this.documentService = documentService;
         this.semanticSearchService = semanticSearchService;
+        this.questionAnsweringService = questionAnsweringService;
     }
 
     // POST /api/documents
@@ -112,6 +118,20 @@ public class DocumentController {
                                                          @RequestParam String query,
                                                          @RequestParam(required = false) Integer topK) {
         SearchResponse response = semanticSearchService.search(documentId, query, topK);
+        return ResponseEntity.ok(response);
+    }
+
+    // POST /api/documents/{documentId}/ask
+    // POST (not GET), unlike /search: this is a request-body DTO
+    // (AskRequest), validated with @Valid exactly like createDocument
+    // above — the established pattern for body-validated input in this
+    // project. Still no business logic here: everything — retrieval,
+    // prompt construction, calling the LLM, the "no information found"
+    // fallback — lives in QuestionAnsweringService.
+    @PostMapping("/{documentId}/ask")
+    public ResponseEntity<AskResponse> askDocument(@PathVariable Long documentId,
+                                                   @Valid @RequestBody AskRequest request) {
+        AskResponse response = questionAnsweringService.ask(documentId, request.getQuestion());
         return ResponseEntity.ok(response);
     }
 }

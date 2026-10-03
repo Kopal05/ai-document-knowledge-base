@@ -1,14 +1,17 @@
 package com.kopal.smartknowledgebase.controller;
 
+import com.kopal.smartknowledgebase.dto.AskResponse;
 import com.kopal.smartknowledgebase.dto.PdfExtractionResponse;
 import com.kopal.smartknowledgebase.dto.SearchResponse;
 import com.kopal.smartknowledgebase.dto.SearchResult;
 import com.kopal.smartknowledgebase.service.DocumentService;
+import com.kopal.smartknowledgebase.service.QuestionAnsweringService;
 import com.kopal.smartknowledgebase.service.SemanticSearchService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -19,6 +22,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -57,6 +61,9 @@ class DocumentControllerTest {
 
     @MockBean
     private SemanticSearchService semanticSearchService;
+
+    @MockBean
+    private QuestionAnsweringService questionAnsweringService;
 
     @Test
     void uploadAndExtractText_shouldReturnExtractedTextForAValidUpload() throws Exception {
@@ -119,5 +126,44 @@ class DocumentControllerTest {
                         .param("query", "some query")
                         .param("topK", "3"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void askDocument_shouldReturnGeneratedAnswerForAValidQuestion() throws Exception {
+        SearchResult source = new SearchResult(17L, 1L, 3, "JWT chunk text", 0.91);
+        when(questionAnsweringService.ask(1L, "How does JWT authentication work?"))
+                .thenReturn(new AskResponse(
+                        "How does JWT authentication work?",
+                        "JWT uses signed tokens for stateless authentication.",
+                        List.of(source)));
+
+        mockMvc.perform(post("/api/documents/1/ask")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\": \"How does JWT authentication work?\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.question").value("How does JWT authentication work?"))
+                .andExpect(jsonPath("$.answer").value("JWT uses signed tokens for stateless authentication."))
+                .andExpect(jsonPath("$.sources[0].chunkId").value(17))
+                .andExpect(jsonPath("$.sources[0].documentId").value(1));
+    }
+
+    @Test
+    void askDocument_shouldReturn400WhenQuestionIsBlank() throws Exception {
+        // @NotBlank + @Valid rejects this before the controller method
+        // body runs — the project's existing Bean Validation handler
+        // (MethodArgumentNotValidException), same pattern createDocument
+        // already relies on.
+        mockMvc.perform(post("/api/documents/1/ask")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\": \"   \"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void askDocument_shouldReturn400WhenQuestionFieldIsMissingEntirely() throws Exception {
+        mockMvc.perform(post("/api/documents/1/ask")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
     }
 }
