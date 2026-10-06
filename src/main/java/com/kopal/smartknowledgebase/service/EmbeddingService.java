@@ -1,5 +1,6 @@
 package com.kopal.smartknowledgebase.service;
 
+import com.kopal.smartknowledgebase.exception.EmbeddingGenerationException;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -52,7 +53,23 @@ public class EmbeddingService {
             throw new IllegalArgumentException("text must not be blank");
         }
 
-        List<Double> rawVector = embeddingProviderClient.embed(text);
+        List<Double> rawVector;
+        try {
+            rawVector = embeddingProviderClient.embed(text);
+        } catch (EmbeddingGenerationException e) {
+            // Already the right exception type (e.g. the client itself
+            // detected a bad response) — don't double-wrap it.
+            throw e;
+        } catch (Exception e) {
+            // Anything else (network failure, timeout, etc.) is an
+            // infrastructure problem the caller shouldn't have to know
+            // the shape of — wrap it in our own exception type.
+            throw new EmbeddingGenerationException("Unexpected error generating embedding", e);
+        }
+
+        if (rawVector == null || rawVector.isEmpty()) {
+            throw new EmbeddingGenerationException("Embedding provider returned no data");
+        }
 
         // This is the one place the raw provider response (List<Double>)
         // becomes our chosen internal representation (float[]) — see the

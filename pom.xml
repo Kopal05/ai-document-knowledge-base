@@ -15,70 +15,83 @@
     <artifactId>smart-knowledge-base</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>smart-knowledge-base</name>
-    <description>Smart Document Q&amp;A / Knowledge Base API - Phase 1 skeleton</description>
+    <description>AI-Powered Document Knowledge Base and QA System</description>
 
     <properties>
         <java.version>21</java.version>
     </properties>
 
     <dependencies>
-        <!-- Core web + REST support -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
-
-        <!-- JPA / Hibernate -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
         </dependency>
-
-        <!-- Bean Validation (@NotBlank etc.) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
 
-        <!-- PostgreSQL driver -->
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
 
-        <!-- Apache PDFBox: reads PDF files and extracts their text content -->
+        <!-- PDF text extraction -->
         <dependency>
             <groupId>org.apache.pdfbox</groupId>
             <artifactId>pdfbox</artifactId>
             <version>3.0.7</version>
         </dependency>
 
-        <!-- Hibernate's vector module: maps a Java float[] entity field to
-     a PostgreSQL pgvector `vector(N)` column (via @JdbcTypeCode
-     (SqlTypes.VECTOR) + @Array(length = N) in DocumentChunk).
-     Version is pinned to 6.5.3.Final to match EXACTLY the
-     hibernate-core version spring-boot-starter-parent:3.3.4
-     already manages transitively — leaving the version off (and
-     letting the two resolve independently) risks two different
-     Hibernate ORM versions landing on the classpath at once. -->
+        <!-- pgvector mapping support (matched to Spring Boot 3.3.4's bundled Hibernate 6.5.3.Final) -->
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-vector</artifactId>
             <version>6.5.3.Final</version>
         </dependency>
 
-        <!-- Testing -->
+        <!-- JWT -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>0.12.6</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>0.12.6</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

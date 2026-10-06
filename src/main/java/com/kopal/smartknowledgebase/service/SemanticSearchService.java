@@ -49,16 +49,23 @@ public class SemanticSearchService {
      * @param query      the user's natural-language search text
      * @param topK       how many results to return; null or <= 0 falls
      *                   back to the configured default (search.default-top-k)
+     * @param ownerId    the AUTHENTICATED caller's id, derived from the
+     *                   validated JWT — never from the request. Searching
+     *                   a document you don't own fails exactly like
+     *                   searching one that doesn't exist (404) — see
+     *                   DocumentService.getDocumentById for the same
+     *                   reasoning applied here.
      */
-    public SearchResponse search(Long documentId, String query, Integer topK) {
+    public SearchResponse search(Long documentId, String query, Integer topK, Long ownerId) {
         if (query == null || query.isBlank()) {
             throw new InvalidSearchQueryException("Search query must not be blank");
         }
 
-        // Reuses the exact same existence check DocumentService.deleteDocument
-        // already relies on — searching against a document that was never
-        // created is a 404, not a confusing "zero results" response.
-        if (!documentRepository.existsById(documentId)) {
+        // Ownership-scoped existence check — upgraded from plain
+        // existsById for authorization: a document that exists but
+        // belongs to someone else is indistinguishable, from the
+        // caller's point of view, from one that doesn't exist at all.
+        if (!documentRepository.existsByIdAndOwnerId(documentId, ownerId)) {
             throw new DocumentNotFoundException(documentId);
         }
 

@@ -4,6 +4,9 @@ import com.kopal.smartknowledgebase.entity.Document;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
+import java.util.Optional;
+
 /**
  * Data access layer for the Document entity.
  *
@@ -23,10 +26,22 @@ import org.springframework.stereotype.Repository;
  * component's role explicit and enables Spring's automatic translation of
  * database exceptions into Spring's DataAccessException hierarchy.
  *
- * We are intentionally NOT adding custom query methods
- * (e.g. findByTitleContaining) yet — the task only needs basic CRUD.
- * Add custom queries only when a real feature needs them.
+ * OWNERSHIP-SCOPED METHODS (added for authentication/authorization):
+ * Every document-related read/write that a controller exposes now goes
+ * through one of findByIdAndOwnerId / existsByIdAndOwnerId /
+ * findAllByOwnerId instead of the plain findById/existsById/findAll
+ * JpaRepository already provides. This is the actual enforcement point
+ * for "users can only access their own documents" — DocumentService
+ * never trusts a caller-supplied ownerId from a request body; it only
+ * ever receives one already-derived from the validated JWT (see
+ * DocumentController's @AuthenticationPrincipal usage).
  */
 @Repository
 public interface DocumentRepository extends JpaRepository<Document, Long> {
+
+    Optional<Document> findByIdAndOwnerId(Long id, Long ownerId);
+
+    boolean existsByIdAndOwnerId(Long id, Long ownerId);
+
+    List<Document> findAllByOwnerId(Long ownerId);
 }

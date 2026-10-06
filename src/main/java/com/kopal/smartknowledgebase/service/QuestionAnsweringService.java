@@ -44,16 +44,29 @@ public class QuestionAnsweringService {
         this.contextChunkCount = contextChunkCount;
     }
 
-    public AskResponse ask(Long documentId, String question) {
+    /**
+     * @param ownerId the AUTHENTICATED caller's id, derived from the
+     *                validated JWT. Passed straight through to
+     *                semanticSearchService.search — this method does no
+     *                ownership checking of its own, because it doesn't
+     *                need to: delegating to search() already enforces it
+     *                (404 if the document isn't this caller's), and
+     *                duplicating that check here would just be the exact
+     *                kind of logic duplication this whole phase was
+     *                asked to avoid.
+     */
+    public AskResponse ask(Long documentId, String question, Long ownerId) {
         // REUSE, not reimplement: this one call already validates the
         // question isn't blank (InvalidSearchQueryException), confirms
-        // the document exists (DocumentNotFoundException), generates the
+        // the document exists AND belongs to this caller
+        // (DocumentNotFoundException otherwise), generates the
         // question's embedding via the existing EmbeddingService, and
-        // runs the existing pgvector similarity search. All three of
-        // those exceptions propagate straight out of this method
-        // unchanged — GlobalExceptionHandler already knows how to turn
-        // each into the right HTTP response.
-        SearchResponse searchResponse = semanticSearchService.search(documentId, question, contextChunkCount);
+        // runs the existing pgvector similarity search. All of those
+        // exceptions propagate straight out of this method unchanged —
+        // GlobalExceptionHandler already knows how to turn each into the
+        // right HTTP response.
+        SearchResponse searchResponse =
+                semanticSearchService.search(documentId, question, contextChunkCount, ownerId);
         List<SearchResult> sources = searchResponse.getResults();
 
         if (sources.isEmpty()) {

@@ -11,26 +11,10 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Unit tests for EmbeddingService.
- *
- * WHY WE MOCK EmbeddingProviderClient (NOT RestClient DIRECTLY):
- * The task requires mocking "the external embedding provider/client" and
- * never making a real network call in a unit test. EmbeddingService
- * depends on the EmbeddingProviderClient INTERFACE, so that's the exact
- * seam we mock here — no Ollama process needs to be running for these
- * tests to pass, and they run in milliseconds every time.
- *
- * We do NOT separately unit test OllamaEmbeddingProviderClient's HTTP
- * behavior in this phase — verifying it actually talks to Ollama
- * correctly would require either a running Ollama instance or Spring's
- * MockRestServiceServer, which is real test infrastructure better
- * suited to a dedicated testing phase (same trade-off reasoning we used
- * for DocumentChunkRepository's derived query in Phase 2.4).
- */
 @ExtendWith(MockitoExtension.class)
 class EmbeddingServiceTest {
 
@@ -45,66 +29,70 @@ class EmbeddingServiceTest {
     }
 
     @Test
-    void generateEmbedding_shouldReturnAFloatArrayForValidText() {
-        when(embeddingProviderClient.embed("Amazon Web Services internship"))
-                .thenReturn(List.of(0.123, -0.421, 0.087));
+    void generatesEmbeddingForValidText() {
+        when(embeddingProviderClient.embed("hello world"))
+                .thenReturn(List.of(0.1, -0.2, 0.3));
 
-        float[] embedding = embeddingService.generateEmbedding("Amazon Web Services internship");
+        float[] result = embeddingService.generateEmbedding("hello world");
 
-        assertThat(embedding).hasSize(3);
-        assertThat(embedding[0]).isEqualTo(0.123f, org.assertj.core.data.Offset.offset(0.0001f));
-        assertThat(embedding[1]).isEqualTo(-0.421f, org.assertj.core.data.Offset.offset(0.0001f));
-        assertThat(embedding[2]).isEqualTo(0.087f, org.assertj.core.data.Offset.offset(0.0001f));
+        assertThat(result).containsExactly(0.1f, -0.2f, 0.3f);
+        verify(embeddingProviderClient).embed("hello world");
     }
 
     @Test
-    void generateEmbedding_shouldSendTheExactTextToTheProvider() {
-        when(embeddingProviderClient.embed("some chunk of document text"))
-                .thenReturn(List.of(0.1, 0.2));
+    void sendsExactTextToProvider() {
+        when(embeddingProviderClient.embed(anyString())).thenReturn(List.of(0.1));
 
-        embeddingService.generateEmbedding("some chunk of document text");
+        embeddingService.generateEmbedding("Amazon Web Services internship");
 
-        // Confirms EmbeddingService passes the text straight through,
-        // with no accidental trimming, casing changes, or mutation.
-        verify(embeddingProviderClient).embed("some chunk of document text");
+        verify(embeddingProviderClient).embed("Amazon Web Services internship");
     }
 
     @Test
-    void generateEmbedding_shouldThrowForNullInput() {
+    void throwsExceptionForNullText() {
         assertThatThrownBy(() -> embeddingService.generateEmbedding(null))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("null");
+                .hasMessageContaining("text must not be null");
     }
 
     @Test
-    void generateEmbedding_shouldThrowForBlankInput() {
+    void throwsExceptionForBlankText() {
         assertThatThrownBy(() -> embeddingService.generateEmbedding("   "))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("blank");
+                .hasMessageContaining("text must not be blank");
     }
 
     @Test
-    void generateEmbedding_shouldPropagateProviderFailuresWithoutSwallowingThem() {
-        when(embeddingProviderClient.embed("some text"))
-                .thenThrow(new EmbeddingGenerationException("Failed to reach the embedding provider"));
+    void wrapsProviderFailureInEmbeddingGenerationException() {
+        when(embeddingProviderClient.embed(anyString()))
+                .thenThrow(new RuntimeException("connection refused"));
 
         assertThatThrownBy(() -> embeddingService.generateEmbedding("some text"))
-                .isInstanceOf(EmbeddingGenerationException.class)
-                .hasMessageContaining("Failed to reach the embedding provider");
+                .isInstanceOf(EmbeddingGenerationException.class);
     }
 
     @Test
-    void generateEmbedding_shouldPreserveVectorOrderAndDimensionCount() {
-        // A slightly longer vector, to confirm we're not just handling
-        // the trivial 2-3 element case.
-        List<Double> rawVector = List.of(0.01, 0.02, 0.03, 0.04, 0.05);
-        when(embeddingProviderClient.embed("longer text")).thenReturn(rawVector);
+    void propagatesEmbeddingGenerationExceptionFromProviderWithoutDoubleWrapping() {
+        EmbeddingGenerationException original = new EmbeddingGenerationException("provider down");
+        when(embeddingProviderClient.embed(anyString())).thenThrow(original);
 
-        float[] embedding = embeddingService.generateEmbedding("longer text");
+        assertThatThrownBy(() -> embeddingService.generateEmbedding("some text"))
+                .isSameAs(original);
+    }
 
-        assertThat(embedding).hasSize(5);
-        for (int i = 0; i < rawVector.size(); i++) {
-            assertThat(embedding[i]).isEqualTo(rawVector.get(i).floatValue());
-        }
+    @Test
+    void throwsExceptionWhenProviderReturnsEmptyList() {
+        when(embeddingProviderClient.embed(anyString())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> embeddingService.generateEmbedding("some text"))
+                .isInstanceOf(EmbeddingGenerationException.class);
+    }
+
+    @Test
+    void throwsExceptionWhenProviderReturnsNull() {
+        when(embeddingProviderClient.embed(anyString())).thenReturn(null);
+
+        assertThatThrownBy(() -> embeddingService.generateEmbedding("some text"))
+                .isInstanceOf(EmbeddingGenerationException.class);
     }
 }

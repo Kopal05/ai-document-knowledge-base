@@ -55,13 +55,27 @@ import java.util.List;
  * - chunks is initialized to `new ArrayList<>()` so addChunk(...) can be
  *   called safely on a brand-new, not-yet-saved Document without a
  *   NullPointerException.
+ *
+ * NEW — the owner relationship:
+ * - @ManyToOne + @JoinColumn(name = "owner_id") — same owning-side
+ *   pattern as DocumentChunk.document: the "many" side (many Documents
+ *   per User) holds the foreign key. nullable = false means every
+ *   document MUST have an owner from creation — there's no "orphan"
+ *   document state to account for anywhere else in the code.
+ * - fetch = FetchType.LAZY for the same reason as DocumentChunk.document:
+ *   loading a Document shouldn't automatically pull in its owning User
+ *   unless something actually asks for it.
+ * - No cascade here (unlike the chunks relationship): deleting a User
+ *   deleting all their Documents isn't a feature this phase implements
+ *   (there's no "delete my account" endpoint at all yet) — leaving
+ *   cascade unset avoids silently defining delete behavior for a
+ *   scenario that doesn't exist yet.
  */
 @Entity
 @Table(name = "documents")
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
 public class Document {
 
     @Id
@@ -71,46 +85,35 @@ public class Document {
     @Column(nullable = false)
     private String title;
 
-    @Column(name = "file_name", nullable = false)
+    @Column(name = "file_name")
     private String fileName;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_id", nullable = false)
+    private User owner;
 
     @OneToMany(mappedBy = "document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentChunk> chunks = new ArrayList<>();
 
+    public void addChunk(DocumentChunk chunk) {
+        chunks.add(chunk);
+        chunk.setDocument(this);
+    }
+
     @PrePersist
     protected void onCreate() {
-        LocalDateTime now = LocalDateTime.now();
-        this.createdAt = now;
-        this.updatedAt = now;
+        this.createdAt = LocalDateTime.now();
+        this.updatedAt = LocalDateTime.now();
     }
 
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
-    }
-
-    /**
-     * Adds a chunk to this document, keeping BOTH sides of the
-     * bidirectional relationship in sync in one call: it sets
-     * chunk.setDocument(this) AND adds the chunk to this.chunks.
-     *
-     * WHY THIS HELPER EXISTS:
-     * Because DocumentChunk owns the foreign key, simply calling
-     * document.getChunks().add(chunk) would update the in-memory List
-     * but forget to set chunk.setDocument(this) — and since the FK column
-     * is written based on chunk.getDocument(), that chunk would try to
-     * save with a NULL document_id and violate the NOT NULL constraint.
-     * This helper makes "add a chunk correctly" a single, safe call
-     * instead of two easy-to-forget steps.
-     */
-    public void addChunk(DocumentChunk chunk) {
-        chunk.setDocument(this);
-        this.chunks.add(chunk);
     }
 }
