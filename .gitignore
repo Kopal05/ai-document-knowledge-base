@@ -9,7 +9,6 @@ target/
 
 # Environment variables
 .env
-.env.*
 
 # Local configuration
 application-local.properties
