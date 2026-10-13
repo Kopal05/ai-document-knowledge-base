@@ -2,6 +2,7 @@ package com.kopal.smartknowledgebase.service;
 
 import com.kopal.smartknowledgebase.exception.AnswerGenerationException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -36,6 +37,7 @@ import org.springframework.web.client.RestClientException;
  * interface rather than this class directly.
  */
 @Component
+@Profile("local")
 public class OllamaChatCompletionClient implements ChatCompletionClient {
 
     private final RestClient chatRestClient;

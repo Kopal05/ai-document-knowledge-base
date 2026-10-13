@@ -2,6 +2,7 @@ package com.kopal.smartknowledgebase.service;
 
 import com.kopal.smartknowledgebase.exception.EmbeddingGenerationException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -34,6 +35,7 @@ import java.util.List;
  * else in the codebase.
  */
 @Component
+@Profile("local")
 public class OllamaEmbeddingProviderClient implements EmbeddingProviderClient {
 
     private final RestClient embeddingRestClient;
