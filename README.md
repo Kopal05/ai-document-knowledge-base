@@ -1,181 +1,217 @@
 # AI-Powered Document Knowledge Base & Q&A System
 
-A backend project where users upload PDF documents and search their
-content using meaning rather than exact keyword matches. The current
-milestone supports PDF text extraction, chunking, embeddings, pgvector
-storage, and semantic search. RAG answer generation, a frontend, and
-deployment are planned next.
+**Live app:** https://ai-document-knowledge-base-cxyi.vercel.app
+**API docs (Swagger):** https://ai-document-knowledge-base.onrender.com/swagger-ui/index.html
 
-## Project Checklist
+Both run on free hosting tiers, so the first request after a few minutes
+of inactivity can take 30-90 seconds to wake up. That's expected.
 
-### Foundation
+## The idea
 
--   [x] Create a Java 21 / Spring Boot 3.3.4 Maven application.
--   [x] Organize code into Controller, Service, Repository, Entity, DTO,
-    and exception layers.
--   [x] Connect PostgreSQL 17 using Spring Data JPA and Hibernate.
--   [x] Implement document CRUD functionality.
--   [x] Add request validation and centralized exception handling.
--   [x] Verify the API and database connection.
+This started as a way to properly understand, not just use, the pieces
+that go into a modern backend system — authentication, relational data
+modeling, file processing, vector search, and retrieval-augmented
+generation — by building a real project around them one phase at a time
+instead of following a single end-to-end tutorial. Each phase below was
+built, tested, and understood on its own before the next one was added,
+which is also why the commit history reads less like a finished product
+and more like a log of decisions.
 
-### PDF Processing
+The project itself: let someone upload a PDF and then ask it questions
+in plain English, getting back an answer grounded in the document's
+actual content rather than a model's general knowledge.
 
--   [x] Add Apache PDFBox for PDF text extraction.
--   [x] Implement `POST /api/documents/upload`.
--   [x] Validate uploaded files and handle extraction errors.
--   [x] Return document ID, filename, extracted text, and chunk count.
--   [x] Split extracted text into overlapping chunks.
--   [x] Add unit tests for text chunking.
--   [x] Save documents and their chunks in PostgreSQL.
--   [x] Verify stored chunks in the database.
--   [x] Configure the upload-size limit.
+## What's been built
 
-### Embeddings and Semantic Search
+- User accounts with JWT-based authentication; every document belongs
+  to the user who uploaded it, and nobody else can see or query it.
+- PDF upload, text extraction, and chunking, with the chunks and their
+  embeddings persisted in Postgres.
+- Semantic search over a document's chunks using pgvector.
+- Retrieval-augmented question answering: the same search, followed by
+  an LLM call that answers only from the retrieved context.
+- A production deployment with a separate database and AI provider from
+  local development — not just a backend that runs on a laptop.
+- A small React frontend so the whole thing is usable without going
+  through Swagger or Postman.
 
--   [x] Install Ollama and download `nomic-embed-text`.
--   [x] Verify that the model creates 768-dimensional embeddings.
--   [x] Implement an embedding provider client and embedding service.
--   [x] Add embedding error handling and mocked tests.
--   [x] Install pgvector and enable the `vector` extension in the
-    project database.
--   [x] Map the embedding column as `vector(768)` using Hibernate.
--   [x] Generate and store embeddings for document chunks.
--   [x] Convert a search question into an embedding.
--   [x] Compare embeddings with pgvector to find semantically similar
-    chunks.
--   [x] Return ranked matching chunks with similarity scores.
--   [x] Implement `GET /api/documents/{documentId}/search?query=...`.
--   [x] Test semantic search in Postman with resume-related questions.
+## What it does
 
-### Planned
+1. You register and log in. The API issues a JWT, and it's required on
+   every request after that.
+2. You upload a PDF. The backend extracts its text with Apache PDFBox,
+   splits it into overlapping chunks, generates an embedding for each
+   chunk, and stores both the text and the vector.
+3. You either **search** a document — plain semantic retrieval, no AI
+   generation, just the most relevant chunks and their similarity
+   scores — or **ask** it a question, which runs that same retrieval
+   and then hands the results to an LLM to produce an actual answer,
+   shown alongside the chunks it came from.
 
--   [ ] Add RAG so an LLM can generate natural-language answers using
-    retrieved chunks.
--   [ ] Add source references to answers.
--   [ ] Add authentication and authorization.
--   [ ] Build a simple, polished, responsive frontend.
--   [ ] Deploy the frontend, backend, and database.
--   [ ] Add production improvements, CI/CD, and final documentation.
+## How a question actually gets answered
 
-## Main Components
+This is the part of the project the rest of it exists to support, so
+it's worth walking through in full. The following happens on every
+`ask` request, and it's the same code path in both local development
+and production — only the embedding and chat providers underneath it
+change.
 
-  -----------------------------------------------------------------------
-  Component                           What it does
-  ----------------------------------- -----------------------------------
-  Java                                Programming language used for the
-                                      backend.
+1. The question is turned into a vector embedding.
+2. That vector is compared against every chunk's stored embedding for
+   the chosen document, using pgvector's cosine-distance operator
+   directly inside Postgres. This comparison happens in the database,
+   not in application code.
+3. The most similar chunks come back, each with a similarity score.
+4. If nothing relevant enough was found, the backend returns a fixed
+   "not enough information" answer and skips the LLM call entirely —
+   on purpose, so the model is never given an empty context and a
+   chance to fill it with something invented.
+5. Otherwise, the retrieved chunks are assembled into a prompt that
+   instructs the model to answer strictly from that context, and to
+   say plainly when the context doesn't contain the answer.
+6. The model's response is returned together with the exact chunks it
+   was grounded in, so the answer can be checked against its source
+   rather than taken on faith.
 
-  Spring Boot                         Helps build the REST API and
-                                      application.
+## Tech stack
 
-  Controller                          Receives HTTP requests and returns
-                                      responses.
+**Backend** — Java 21, Spring Boot 3.3.4, Maven, Spring Data JPA /
+Hibernate, Spring Security with JWT (BCrypt-hashed passwords, stateless
+sessions), Apache PDFBox, springdoc for the Swagger docs.
 
-  Service                             Contains logic such as PDF
-                                      processing and searching.
+**Database and search** — PostgreSQL with the pgvector extension.
+Flyway manages schema migrations in production; local development uses
+Hibernate's auto-update instead, since the schema is still changing
+often enough there that a formal migration per change would slow things
+down for no real benefit yet.
 
-  Repository                          Reads and writes data through
-                                      Spring Data JPA.
+**AI providers** — Ollama (`nomic-embed-text` for embeddings,
+`llama3.2` for chat) locally; Google's Gemini API
+(`gemini-embedding-001` and `gemini-flash-latest`) in production.
 
-  JPA / Hibernate                     Maps Java objects to database
-                                      records.
+**Frontend** — React, TypeScript, Vite, plain CSS.
 
-  PostgreSQL                          Stores document details and text
-                                      chunks.
+**Infrastructure** — Docker, Render (backend), Neon (managed Postgres),
+Vercel (frontend).
 
-  pgvector                            Adds vector storage and similarity
-                                      search to PostgreSQL.
+**Testing** — JUnit 5, Mockito, AssertJ.
 
-  Apache PDFBox                       Extracts text from PDF files.
+## Architecture
 
-  Ollama `nomic-embed-text`           Runs locally to create
-                                      768-dimensional text embeddings.
+```
+ Browser (React)
+       │
+       │ HTTPS, JWT in Authorization header
+       ▼
+ Spring Boot API ── Spring Security / JWT filter
+       │
+       ├── DocumentService ──── Apache PDFBox (extract + chunk)
+       │
+       ├── EmbeddingService ─── Ollama (local) or Gemini (prod)
+       │
+       ├── SemanticSearchService ── pgvector similarity search
+       │
+       └── QuestionAnsweringService ── chat completion
+                 (reuses SemanticSearchService, then calls
+                  Ollama or Gemini to generate the answer)
+       │
+       ▼
+ PostgreSQL + pgvector
+ (Neon in production, local Postgres in development)
+```
 
-  Embedding                           A numerical representation of text
-                                      meaning.
+Two things about this shape are worth calling out. First, the embedding
+and chat providers sit behind interfaces
+(`EmbeddingProviderClient`, `ChatCompletionClient`), each with a local
+(Ollama) and a production (Gemini) implementation selected by Spring
+profile — the services that use them never know which one is active.
+Second, `QuestionAnsweringService` doesn't duplicate any retrieval
+logic; it calls `SemanticSearchService` directly and only adds the
+prompt-building and generation step on top, so there's exactly one
+place that knows how to find relevant chunks.
 
-  Semantic search                     Finds related content even when
-                                      exact words differ.
-
-  RAG (planned)                       Gives retrieved passages to an LLM
-                                      to help generate an answer.
-  -----------------------------------------------------------------------
-
-## Technology Stack
-
--   **Language:** Java 21
--   **Backend:** Spring Boot 3.3.4
--   **Build:** Maven
--   **Database:** PostgreSQL 17
--   **Persistence:** Spring Data JPA, Hibernate
--   **Vector search:** pgvector
--   **PDF processing:** Apache PDFBox
--   **Embeddings:** Ollama, `nomic-embed-text` (768 dimensions)
--   **Testing:** JUnit 5, Mockito, AssertJ
--   **API testing:** Postman
--   **Version control:** Git, GitHub
-
-## Run Locally
+## Running it locally
 
 ### Requirements
 
--   Java 21 and Maven
--   PostgreSQL 17 with pgvector installed
--   Ollama with `nomic-embed-text`
--   Git
+- Java 21 and Maven
+- Node.js
+- PostgreSQL with pgvector installed
+- Ollama, with `nomic-embed-text` and `llama3.2` pulled
+- Git
 
-### Steps
+### Backend
 
-1.  Clone the repository:
+```bash
+git clone https://github.com/Kopal05/ai-document-knowledge-base.git
+cd ai-document-knowledge-base
+```
 
-    ``` bash
-    git clone https://github.com/Kopal05/ai-document-knowledge-base.git
-    cd ai-document-knowledge-base
-    ```
+Create the database and enable pgvector:
 
-2.  Create the database if needed:
+```sql
+CREATE DATABASE smart_knowledge_base;
+\c smart_knowledge_base
+CREATE EXTENSION IF NOT EXISTS vector;
+```
 
-    ``` sql
-    CREATE DATABASE smart_knowledge_base;
-    ```
+Make sure Ollama is running with both models pulled:
 
-3.  Connect to `smart_knowledge_base` and enable pgvector:
+```bash
+ollama pull nomic-embed-text
+ollama pull llama3.2
+```
 
-    ``` sql
-    CREATE EXTENSION IF NOT EXISTS vector;
-    ```
+Set the required environment variables — `DB_URL`, `DB_USERNAME`,
+`DB_PASSWORD`, and `JWT_SECRET` (generate one with
+`openssl rand -base64 32`) at minimum. See `.env.example` for the full
+list.
 
-4.  Make sure Ollama is running and the model is installed:
+```bash
+mvn spring-boot:run
+```
 
-    ``` bash
-    ollama pull nomic-embed-text
-    ollama list
-    ```
+The API is now at `http://localhost:8080`, with interactive docs at
+`http://localhost:8080/swagger-ui/index.html`.
 
-5.  Configure database credentials and other settings in
-    `application.properties` or environment variables. Do not commit
-    passwords or secrets. Refer to the repository's current
-    configuration for the exact property names.
+### Frontend
 
-6.  Run tests:
+```bash
+cd frontend
+npm install
+```
 
-    ``` bash
-    mvn test
-    ```
+Create a `.env` file in `frontend/`:
 
-7.  Start the backend:
+```
+VITE_API_BASE_URL=http://localhost:8080
+```
 
-    ``` bash
-    mvn spring-boot:run
-    ```
+```bash
+npm run dev
+```
 
-The current local API uses `http://localhost:8080`.
+The app opens at `http://localhost:5173`. If requests to the backend
+fail, check that `CORS_ALLOWED_ORIGIN` on the backend matches this URL
+exactly.
 
-## Current Status
+## Scope
 
-**Completed:** Spring Boot and PostgreSQL foundation, PDF processing,
-chunk persistence, Ollama embeddings, pgvector integration, and semantic
-search tested locally.
+This is a learning project, not a product, and the scope reflects that
+on purpose. In: everything described above, built and actually
+deployed, not just working on a laptop. Out, for now: CI/CD, rate
+limiting, structured logging and monitoring, multi-file or
+multi-format document support (PDF only), and conversation history
+across questions (every `ask` is independent — there's no memory of
+earlier questions in the same session).
 
-**Next phase:** RAG-based answer generation. A simple frontend and
-deployment are planned after the core backend flow is complete.
+None of these are things I didn't think of; they're things I chose to
+leave out so the core flow — upload, embed, retrieve, generate — could
+be built and understood properly first, instead of spreading the same
+amount of effort thinner across more features.
+
+## Feedback
+
+If something here is unclear, wrong, or could be done better, I'd
+genuinely like to hear it — open an issue on this repo, or reach me
+directly. Still actively working on this, so nothing here is final.
